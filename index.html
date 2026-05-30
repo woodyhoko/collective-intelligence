@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Character Debate with Judges & Voting</title>
+    <style>
+        :root {
+            --char1-color: #8dadec;
+            --char2-color: #f7a8b8;
+            --bubble-color: #f0f0f0;
+            --text-color: #333;
+            --bg-color: #fdfdfd;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: var(--text-color);
+            margin-bottom: 20px;
+        }
+
+        #judges-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .judge {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: #a8dadc; /* Judge base color */
+            border: 2px solid var(--text-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+            font-weight: bold;
+            color: white;
+            position: relative;
+            cursor: help; /* Indicates hoverable info */
+        }
+
+        .judge.voting {
+            transform: scale(1.1);
+            box-shadow: 0 0 10px #457b9d;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .judge-vote-indicator {
+            position: absolute;
+            top: -15px;
+            font-size: 1.2em;
+            opacity: 0;
+            transition: opacity 0.3s ease-out;
+            color: var(--text-color);
+        }
+        .judge-vote-indicator.visible { opacity: 1; }
+
+        .judge-tooltip {
+            visibility: hidden;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px 12px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%; /* Position above the judge */
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            width: 200px;
+            font-size: 0.85em;
+            pointer-events: none; /* Allows clicks through */
+        }
+
+        .judge-tooltip::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #555 transparent transparent transparent;
+        }
+
+        .judge:hover .judge-tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+
+
+        #scene {
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-end;
+            width: 100%;
+            max-width: 800px;
+            height: 300px;
+            position: relative;
+        }
+
+        .character-container {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .character {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            position: relative;
+            border: 4px solid var(--text-color);
+            transition: transform 0.2s ease-in-out;
+        }
+
+        .character.talking {
+            transform: translateY(-5px) scale(1.02);
+        }
+
+        #char1 { background-color: var(--char1-color); }
+        #char2 { background-color: var(--char2-color); }
+
+        .character::before, .character::after { /* Eyes */
+            content: '';
+            position: absolute;
+            width: 15px;
+            height: 20px;
+            background-color: var(--text-color);
+            border-radius: 50%;
+            top: 35px;
+        }
+
+        .character::before { left: 25px; }
+        .character::after { right: 25px; }
+        
+        .stance {
+            font-weight: bold;
+            margin-top: 10px;
+            padding: 5px 10px;
+            border-radius: 12px;
+            color: white;
+            font-size: 0.9em;
+        }
+
+        .speech-bubble {
+            position: absolute;
+            bottom: 120px;
+            width: 250px;
+            background: var(--bubble-color);
+            border: 2px solid #ccc;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: left;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+            font-size: 0.95em;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+        }
+
+        .speech-bubble.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .speech-bubble::after { /* The little triangle */
+            content: '';
+            position: absolute;
+            bottom: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-top: 12px solid var(--bubble-color);
+        }
+        
+        .speech-bubble.side-left::after {
+            border-top-color: #ccc;
+            bottom: -15px;
+        }
+        
+         .speech-bubble::before {
+            content: '';
+            position: absolute;
+            bottom: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-top: 12px solid var(--bubble-color);
+            z-index: 1;
+        }
+
+
+        #debate-controls {
+            margin-top: 30px;
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        #topic-input {
+            flex-grow: 1;
+            padding: 12px;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+
+        #start-debate-btn {
+            padding: 12px 20px;
+            border: none;
+            background-color: #337ab7;
+            color: white;
+            font-size: 1em;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        #start-debate-btn:hover {
+            background-color: #286090;
+        }
+        
+        #start-debate-btn:disabled {
+            background-color: #999;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin-top: 20px;
+            color: #666;
+            min-height: 24px;
+        }
+
+        #api-warning {
+            background-color: #fffbe6;
+            border: 1px solid #ffe58f;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            max-width: 600px;
+            text-align: center;
+        }
+
+        #vote-graph-container {
+            margin-top: 30px;
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+        }
+
+        #vote-graph {
+            width: 100%;
+            height: 150px;
+            background-color: #e0e0e0;
+            border-radius: 8px;
+            display: flex;
+            align-items: flex-end;
+            padding: 10px;
+            gap: 10px;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .vote-bar {
+            flex-grow: 1;
+            background-color: #4CAF50; /* Default green */
+            height: 0; /* Will be set by JS */
+            transition: height 0.5s ease-out;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 1.2em;
+            position: relative;
+            box-shadow: inset 0 -3px 0 rgba(0,0,0,0.2);
+        }
+
+        #bar-bloop { background-color: var(--char1-color); }
+        #bar-zorp { background-color: var(--char2-color); }
+
+        .vote-label {
+            position: absolute;
+            top: -25px;
+            color: var(--text-color);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🤖 AI Character Debate with Judges 🤖</h1>
+    
+    <div id="judges-container">
+        </div>
+
+    <div id="scene">
+        <div class="character-container" id="container1">
+            <div class="speech-bubble" id="bubble1"></div>
+            <div class="character" id="char1"></div>
+            <div class="stance" id="stance1" style="background-color: var(--char1-color);">Bloop</div>
+        </div>
+        <div class="character-container" id="container2">
+            <div class="speech-bubble" id="bubble2"></div>
+            <div class="character" id="char2"></div>
+            <div class="stance" id="stance2" style="background-color: var(--char2-color);">Zorp</div>
+        </div>
+    </div>
+
+    <div id="debate-controls">
+        <input type="text" id="topic-input" placeholder="Enter a debate topic (e.g., Cats vs. Dogs)">
+        <button id="start-debate-btn">Start Debate</button>
+    </div>
+
+    <div id="status">Enter a topic and click start!</div>
+
+    <div id="vote-graph-container">
+        <h2>Live Votes</h2>
+        <div id="vote-graph">
+            <div class="vote-bar" id="bar-bloop"><span class="vote-label">Bloop</span><span id="bloop-count">0</span></div>
+            <div class="vote-bar" id="bar-zorp"><span class="vote-label">Zorp</span><span id="zorp-count">0</span></div>
+        </div>
+    </div>
+
+    <div id="api-warning" style="display: none;">
+        <strong>Warning:</strong> The `LanguageModel` API is not available. Please ensure you are using a compatible version of Chrome and have enabled the correct flags in <code>chrome://flags</code>.
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const char1 = document.getElementById('char1');
+            const char2 = document.getElementById('char2');
+            const bubble1 = document.getElementById('bubble1');
+            const bubble2 = document.getElementById('bubble2');
+            const stance1El = document.getElementById('stance1');
+            const stance2El = document.getElementById('stance2');
+            const topicInput = document.getElementById('topic-input');
+            const startBtn = document.getElementById('start-debate-btn');
+            const statusEl = document.getElementById('status');
+            const apiWarning = document.getElementById('api-warning');
+            const judgesContainer = document.getElementById('judges-container');
+            const barBloop = document.getElementById('bar-bloop');
+            const barZorp = document.getElementById('bar-zorp');
+            const bloopCountEl = document.getElementById('bloop-count');
+            const zorpCountEl = document.getElementById('zorp-count');
+
+            let debater1Name = 'Bloop'; // Default names
+            let debater2Name = 'Zorp';
+
+            // --- Core AI and Debate Logic ---
+            const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+            const judgePersonalities = [
+                { id: 'J1', name: 'Judge Alpha', background: 'A retired historian who values factual accuracy and long-term consequences.', preference: 'leans towards well-researched arguments.', decision_criteria: 'Focus on historical data, verifiable facts, and potential future societal impacts.' },
+                { id: 'J2', name: 'Judge Beta', background: 'A passionate advocate for social justice, always considering fairness and equity.', preference: 'favors arguments that highlight community benefit.', decision_criteria: 'Prioritize arguments that address fairness, equality, and the well-being of marginalized groups.' },
+                { id: 'J3', name: 'Judge Gamma', background: 'A shrewd economist, focused on efficiency, cost-benefit analysis, and market dynamics.', preference: 'prefers data-driven economic reasoning.', decision_criteria: 'Evaluate arguments based on economic efficiency, resource allocation, and measurable financial outcomes.' },
+                { id: 'J4', name: 'Judge Delta', background: 'An environmental scientist, deeply concerned with ecological sustainability and impact.', preference: 'is swayed by ecological evidence.', decision_criteria: 'Consider the environmental footprint, sustainability, and long-term ecological health implications of each argument.' },
+                { id: 'J5', name: 'Judge Epsilon', background: 'A pragmatic engineer, looking for practical, implementable solutions and robust designs.', preference: 'values feasibility and innovation.', decision_criteria: 'Assess the practicality, implementability, and innovative aspects of proposed solutions. Is it workable?' },
+            ];
+
+            const judges = [];
+            let judgeSessions = []; // To hold AI sessions for judges
+            let currentVotes = { [debater1Name]: 0, [debater2Name]: 0 }; // Initialize with default names
+            let judgeVotesHistory = []; // To store votes after each turn for analysis/graph
+
+            // JSON schema for judge's vote
+            const voteSchema = {
+                "type": "object",
+                "properties": {
+                    "vote": {
+                        "type": "string",
+                        "enum": [debater1Name, debater2Name] // Will be updated dynamically
+                    }
+                },
+                "required": ["vote"]
+            };
+
+            function createJudgeElements() {
+                judgesContainer.innerHTML = ''; // Clear previous judges
+                judgePersonalities.forEach(p => {
+                    const judgeDiv = document.createElement('div');
+                    judgeDiv.classList.add('judge');
+                    judgeDiv.id = `judge-${p.id}`;
+                    judgeDiv.textContent = p.id;
+
+                    const tooltip = document.createElement('div');
+                    tooltip.classList.add('judge-tooltip');
+                    tooltip.innerHTML = `<strong>${p.name}</strong><br>${p.background} ${p.preference}`;
+                    judgeDiv.appendChild(tooltip);
+                    
+                    const voteIndicator = document.createElement('span');
+                    voteIndicator.classList.add('judge-vote-indicator');
+                    judgeDiv.appendChild(voteIndicator);
+
+                    judgesContainer.appendChild(judgeDiv);
+                });
+            }
+
+            async function updateVoteGraph() {
+                const totalVotes = currentVotes[debater1Name] + currentVotes[debater2Name];
+                const maxBarHeight = 130; // Max height for the bars in pixels
+
+                const bloopHeight = totalVotes > 0 ? (currentVotes[debater1Name] / totalVotes) * maxBarHeight : 0;
+                const zorpHeight = totalVotes > 0 ? (currentVotes[debater2Name] / totalVotes) * maxBarHeight : 0;
+
+                barBloop.style.height = `${bloopHeight}px`;
+                barZorp.style.height = `${zorpHeight}px`;
+
+                bloopCountEl.textContent = currentVotes[debater1Name];
+                zorpCountEl.textContent = currentVotes[debater2Name];
+            }
+
+
+            async function startDebate() {
+                if (typeof window.LanguageModel === 'undefined') {
+                    apiWarning.style.display = 'block';
+                    statusEl.textContent = 'Error: LanguageModel API not available.';
+                    return;
+                }
+                
+                const topic = topicInput.value.trim();
+                if (!topic) {
+                    statusEl.textContent = 'Please enter a topic to debate!';
+                    return;
+                }
+                
+                startBtn.disabled = true;
+                statusEl.textContent = 'Checking model availability...';
+                
+                hideAllBubbles();
+                clearJudgeVotes();
+                createJudgeElements(); // Recreate judges for each debate
+
+                try {
+                    const availability = await LanguageModel.availability();
+                    if (availability === 'unavailable') {
+                        statusEl.textContent = 'Error: The AI model is unavailable on this device.';
+                        startBtn.disabled = false;
+                        return;
+                    }
+
+                    if (availability === 'downloading' || availability === 'downloadable') {
+                         statusEl.textContent = 'AI model is downloading. This may take a moment...';
+                    }
+
+                    await sleep(500);
+
+                    const characters = [
+                        { name: debater1Name, element: char1, bubble: bubble1, stanceEl: stance1El },
+                        { name: debater2Name, element: char2, bubble: bubble2, stanceEl: stance2El },
+                    ];
+                    
+                    const stances = ['For', 'Against'];
+                    if (Math.random() > 0.5) stances.reverse();
+
+                    characters[0].stance = stances[0];
+                    characters[1].stance = stances[1];
+
+                    stance1El.textContent = `${characters[0].name} is ${characters[0].stance}`;
+                    stance2El.textContent = `${characters[1].name} is ${characters[1].stance}`;
+
+                    statusEl.textContent = 'Initializing AI session for debaters...';
+                    const debaterSession = await LanguageModel.create({
+                        monitor(m) {
+                            m.addEventListener('downloadprogress', (e) => {
+                                console.log(`Debater Model Downloaded: ${e.loaded * 100}%`);
+                                statusEl.textContent = `Downloading debater model... ${Math.round(e.loaded * 100)}%`;
+                            });
+                        },
+                    });
+
+                    statusEl.textContent = 'Initializing AI sessions for judges...';
+                    judgeSessions = await Promise.all(judgePersonalities.map(async (p, index) => {
+                        return LanguageModel.create({
+                             // No monitor for subsequent sessions to avoid cluttering status for primary download
+                        });
+                    }));
+                    
+                    let conversationHistory = `Debate Topic: "${topic}"\n\n`;
+                    const debateTurns = 6;
+
+                    for (let i = 0; i < debateTurns; i++) {
+                        const currentCharacter = characters[i % 2];
+                        const otherCharacter = characters[(i + 1) % 2];
+                        
+                        hideAllBubbles();
+
+                        const debaterPrompt = `
+                            You are a debater named ${currentCharacter.name}.
+                            The debate topic is: "${topic}".
+                            Your assigned stance is: **${currentCharacter.stance}** the topic.
+                            The opponent is ${otherCharacter.name}, whose stance is ${otherCharacter.stance}.
+
+                            **Conversation History:**
+                            ${conversationHistory.length > 0 ? conversationHistory : 'No statements have been made yet.'}
+
+                            **Your Task:**
+                            Provide a concise, compelling argument (1-2 sentences) for your stance.
+                            If there was a previous statement from your opponent, try to rebut it.
+                            Stay in character. Do not introduce yourself or use pleasantries. Just state your argument.
+                        `;
+
+                        statusEl.textContent = `${currentCharacter.name} is speaking...`;
+                        const response = await debaterSession.prompt(debaterPrompt);
+
+                        conversationHistory += `${currentCharacter.name} (${currentCharacter.stance}): ${response}\n`;
+                        showBubble(currentCharacter, response);
+                        await sleep(3500); 
+                        
+                        // Judges cast their votes after each turn
+                        await castJudgeVotes(conversationHistory, topic, characters);
+                        await sleep(1000); // Small pause after voting
+                    }
+                    
+                    statusEl.textContent = 'Debate finished! Final votes tallied.';
+                    debaterSession.destroy();
+                    judgeSessions.forEach(session => session.destroy()); // Clean up judge sessions
+
+                } catch (error) {
+                    console.error('Error during AI session:', error);
+                    statusEl.textContent = 'An error occurred. Check the console for details.';
+                } finally {
+                    startBtn.disabled = false;
+                }
+            }
+            
+            async function castJudgeVotes(currentDebateHistory, topic, characters) {
+                statusEl.textContent = 'Judges are casting their votes...';
+                currentVotes = { [debater1Name]: 0, [debater2Name]: 0 }; // Reset votes for this round
+                const roundVotes = {}; // To store votes for the current round per judge
+
+                const judgePromises = judgePersonalities.map(async (judge, index) => {
+                    const judgeSession = judgeSessions[index];
+                    const judgeEl = document.getElementById(`judge-${judge.id}`);
+                    const voteIndicator = judgeEl.querySelector('.judge-vote-indicator');
+
+                    judgeEl.classList.add('voting');
+                    voteIndicator.classList.remove('visible');
+
+                    const judgePrompt = `
+                        You are a judge named ${judge.name}.
+                        Your background: ${judge.background}
+                        Your preference: ${judge.preference}
+                        Your decision criteria: ${judge.decision_criteria}
+
+                        The debate topic is: "${topic}".
+                        Debater 1 (${debater1Name}) is ${characters.find(c => c.name === debater1Name).stance} the topic.
+                        Debater 2 (${debater2Name}) is ${characters.find(c => c.name === debater2Name).stance} the topic.
+
+                        **Debate Transcript So Far:**
+                        ${currentDebateHistory}
+
+                        Based on the debate transcript and your personal criteria, which debater has presented a more convincing argument overall up to this point?
+                        Respond ONLY with a JSON object: { "vote": "DebaterName" }. The DebaterName MUST be either "${debater1Name}" or "${debater2Name}".
+                    `;
+
+                    try {
+                        const response = await judgeSession.prompt(judgePrompt, { responseConstraint: voteSchema });
+                        const voteObj = JSON.parse(response);
+                        const votedFor = voteObj.vote;
+
+                        if (votedFor === debater1Name || votedFor === debater2Name) {
+                            currentVotes[votedFor]++;
+                            roundVotes[judge.id] = votedFor;
+
+                            // Display vote indicator
+                            voteIndicator.textContent = votedFor === debater1Name ? '🔵' : '🔴'; // Blue for Bloop, Red for Zorp
+                            voteIndicator.classList.add('visible');
+                        } else {
+                             console.warn(`Judge ${judge.name} returned an invalid vote: ${votedFor}`);
+                        }
+                    } catch (error) {
+                        console.error(`Error with judge ${judge.name} voting:`, error);
+                        // Default vote or handle error gracefully
+                    } finally {
+                        judgeEl.classList.remove('voting');
+                    }
+                });
+
+                await Promise.all(judgePromises);
+                judgeVotesHistory.push({ ...currentVotes }); // Record votes for this round
+                updateVoteGraph();
+            }
+
+            function showBubble(character, message) {
+                character.bubble.textContent = message;
+                character.element.classList.add('talking');
+                character.bubble.classList.add('visible');
+                
+                setTimeout(() => {
+                    character.element.classList.remove('talking');
+                }, 2000);
+            }
+
+            function hideAllBubbles() {
+                bubble1.classList.remove('visible');
+                bubble2.classList.remove('visible');
+            }
+
+            function clearJudgeVotes() {
+                currentVotes = { [debater1Name]: 0, [debater2Name]: 0 };
+                judgeVotesHistory = [];
+                bloopCountEl.textContent = '0';
+                zorpCountEl.textContent = '0';
+                barBloop.style.height = '0px';
+                barZorp.style.height = '0px';
+
+                // Hide all judge vote indicators
+                document.querySelectorAll('.judge-vote-indicator').forEach(indicator => {
+                    indicator.classList.remove('visible');
+                });
+            }
+            
+            startBtn.addEventListener('click', startDebate);
+            
+            // Initial setup on load
+            clearJudgeVotes();
+            createJudgeElements();
+        });
+    </script>
+</body>
+</html>
