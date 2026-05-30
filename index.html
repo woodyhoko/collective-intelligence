@@ -367,11 +367,29 @@
             .judges-list { max-height: 320px; }
         }
         @media (max-width: 620px) {
+            .app { padding-bottom: 76px; }
             .sides { grid-template-columns: 1fr; }
             .versus { padding: 4px; }
             .gate h1 { font-size: 2.2rem; }
+            .brand h1 { font-size: 1.15rem; }
             .brand p { display: none; }
+            .brand .mark { width: 34px; height: 34px; font-size: .95rem; }
             .stage-controls .btn { min-width: 100%; }
+            /* Keep speech bubbles readable instead of one-word-per-line */
+            .stage { gap: 6px; padding-top: 18px; }
+            .debater { width: 48%; }
+            .avatar { width: 74px; height: 74px; font-size: 1.5rem; border-width: 3px; }
+            .bubble {
+                width: 160px; left: 50%; transform: translateX(-50%); bottom: 108px;
+                font-size: .78rem; padding: 9px 11px; line-height: 1.42;
+            }
+            .bubble.show { transform: translateX(-50%) translateY(0); }
+            .name-tag { font-size: .8rem; padding: 4px 11px; margin-top: 10px; }
+            .stance-tag { font-size: .68rem; }
+            .panel { padding: 15px; }
+            .setup { padding: 18px 15px; }
+            .corner-links { bottom: 10px; right: 10px; }
+            .corner-links a { padding: 6px 11px; font-size: 12px; }
         }
 
         ::-webkit-scrollbar { width: 8px; height: 8px; }
