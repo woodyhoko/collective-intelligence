@@ -1,650 +1,1235 @@
-<!DOCTYPE html>
+<!-- Collective Intelligence — AI Debate Arena -->
+<!-- Runs on Chrome's built-in Prompt API when available, otherwise falls back to on-device Gemma (LiteRT / WebGPU). -->
+<!doctype html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Character Debate with Judges & Voting</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Collective Intelligence — AI Debate Arena</title>
+    <meta name="description"
+        content="Two AI debaters argue a binary motion while a panel of AI judges with their own backgrounds vote each round. Runs on-device." />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <script src="https://unpkg.com/es-module-shims@1.7.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "@mediapipe/tasks-genai": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai/+esm"
+            }
+        }
+    </script>
+
     <style>
         :root {
-            --char1-color: #8dadec;
-            --char2-color: #f7a8b8;
-            --bubble-color: #f0f0f0;
-            --text-color: #333;
-            --bg-color: #fdfdfd;
+            --bg: #0b1020;
+            --surface: #161e36;
+            --surface-2: #1e2842;
+            --surface-hover: #28344f;
+            --pro: #4f8cff;
+            --pro-soft: rgba(79, 140, 255, .16);
+            --con: #ff5d73;
+            --con-soft: rgba(255, 93, 115, .16);
+            --accent: #8b5cf6;
+            --gold: #f5c451;
+            --ink: #f5f7ff;
+            --muted: #9aa6c4;
+            --line: rgba(255, 255, 255, .09);
+            --glass: rgba(22, 30, 54, .72);
+            --glass-border: rgba(255, 255, 255, .1);
+            --font: 'Outfit', system-ui, sans-serif;
+            --serif: 'Playfair Display', serif;
+            --ok: #34d399;
         }
+
+        * { box-sizing: border-box; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
             margin: 0;
-            padding: 20px;
-            box-sizing: border-box;
+            min-height: 100vh;
+            background: var(--bg);
+            background-image:
+                radial-gradient(circle at 12% 12%, rgba(79, 140, 255, .14) 0%, transparent 42%),
+                radial-gradient(circle at 88% 18%, rgba(255, 93, 115, .12) 0%, transparent 42%),
+                radial-gradient(circle at 50% 110%, rgba(139, 92, 246, .14) 0%, transparent 50%);
+            color: var(--ink);
+            font-family: var(--font);
+            -webkit-font-smoothing: antialiased;
         }
 
-        h1 {
-            color: var(--text-color);
-            margin-bottom: 20px;
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes slideUp { from { transform: translateY(16px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+        @keyframes pop { 0% { transform: scale(.6); opacity: 0 } 60% { transform: scale(1.15) } 100% { transform: scale(1); opacity: 1 } }
+
+        a { color: var(--accent); }
+
+        /* ---------- Loader / model gate ---------- */
+        .loader-overlay {
+            position: fixed; inset: 0; z-index: 2000;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--bg);
+            background-image:
+                radial-gradient(circle at 20% 20%, rgba(79, 140, 255, .16) 0, transparent 45%),
+                radial-gradient(circle at 80% 80%, rgba(255, 93, 115, .14) 0, transparent 45%);
+            padding: 24px;
         }
 
-        #judges-container {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            margin-bottom: 20px;
+        .gate {
+            text-align: center; max-width: 480px; animation: fadeIn .8s ease-out;
         }
 
-        .judge {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background-color: #a8dadc; /* Judge base color */
-            border: 2px solid var(--text-color);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.8em;
-            font-weight: bold;
-            color: white;
-            position: relative;
-            cursor: help; /* Indicates hoverable info */
+        .gate .kicker {
+            text-transform: uppercase; letter-spacing: .32em; font-size: .72rem;
+            color: var(--muted); margin-bottom: 14px;
         }
 
-        .judge.voting {
-            transform: scale(1.1);
-            box-shadow: 0 0 10px #457b9d;
-            transition: transform 0.2s, box-shadow 0.2s;
+        .gate h1 {
+            font-family: var(--serif); font-size: 2.9rem; margin: 0 0 .4rem;
+            background: linear-gradient(110deg, var(--pro), var(--accent) 55%, var(--con));
+            -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
         }
 
-        .judge-vote-indicator {
-            position: absolute;
-            top: -15px;
-            font-size: 1.2em;
-            opacity: 0;
-            transition: opacity 0.3s ease-out;
-            color: var(--text-color);
-        }
-        .judge-vote-indicator.visible { opacity: 1; }
+        .gate .lede { color: var(--muted); font-size: 1.02rem; line-height: 1.6; margin: 0 auto 22px; max-width: 400px; }
 
-        .judge-tooltip {
-            visibility: hidden;
-            background-color: #555;
-            color: #fff;
-            text-align: center;
-            border-radius: 6px;
-            padding: 8px 12px;
-            position: absolute;
-            z-index: 1;
-            bottom: 125%; /* Position above the judge */
-            left: 50%;
-            transform: translateX(-50%);
-            opacity: 0;
-            transition: opacity 0.3s;
-            width: 200px;
-            font-size: 0.85em;
-            pointer-events: none; /* Allows clicks through */
-        }
+        .gate-note { font-size: .9rem; line-height: 1.55; color: var(--muted); margin: 18px auto 0; max-width: 420px; }
+        .gate-sub { font-size: .76rem; line-height: 1.5; color: var(--muted); opacity: .7; margin-top: 14px; }
 
-        .judge-tooltip::after {
-            content: "";
-            position: absolute;
-            top: 100%;
-            left: 50%;
-            margin-left: -5px;
-            border-width: 5px;
-            border-style: solid;
-            border-color: #555 transparent transparent transparent;
+        .backend-chip {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 7px 15px; border-radius: 999px; font-size: .82rem; font-weight: 500;
+            background: var(--surface-2); border: 1px solid var(--line); margin-bottom: 20px;
         }
+        .backend-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+        .backend-chip.ok .dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+        .backend-chip.gemma .dot { background: var(--gold); box-shadow: 0 0 10px var(--gold); }
 
-        .judge:hover .judge-tooltip {
-            visibility: visible;
-            opacity: 1;
+        .progress-bar { width: 320px; max-width: 80vw; height: 6px; background: var(--surface); border-radius: 3px; margin: 22px auto 0; overflow: hidden; }
+        .progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--pro), var(--accent)); transition: width .3s ease; }
+
+        /* ---------- Buttons ---------- */
+        .btn {
+            font-family: var(--font); font-size: .95rem; font-weight: 600;
+            border: none; border-radius: 12px; padding: 12px 22px; cursor: pointer;
+            color: #fff; background: linear-gradient(120deg, var(--pro), var(--accent));
+            transition: transform .15s, box-shadow .15s, opacity .15s;
+            box-shadow: 0 8px 22px rgba(79, 140, 255, .28);
         }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(79, 140, 255, .36); }
+        .btn:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
 
-
-        #scene {
-            display: flex;
-            justify-content: space-around;
-            align-items: flex-end;
-            width: 100%;
-            max-width: 800px;
-            height: 300px;
-            position: relative;
+        .btn-ghost {
+            background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); box-shadow: none;
         }
+        .btn-ghost:hover:not(:disabled) { background: var(--surface-hover); transform: translateY(-1px); box-shadow: none; }
 
-        .character-container {
-            position: relative;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+        .btn-sm { padding: 8px 14px; font-size: .82rem; border-radius: 9px; }
+        .icon-btn {
+            background: var(--surface-2); border: 1px solid var(--line); color: var(--muted);
+            width: 34px; height: 34px; border-radius: 9px; cursor: pointer; display: inline-flex;
+            align-items: center; justify-content: center; transition: .15s;
         }
+        .icon-btn:hover { background: var(--surface-hover); color: var(--ink); }
 
-        .character {
-            width: 100px;
-            height: 100px;
-            border-radius: 50%;
-            position: relative;
-            border: 4px solid var(--text-color);
-            transition: transform 0.2s ease-in-out;
-        }
+        /* ---------- App shell ---------- */
+        .app { max-width: 1320px; margin: 0 auto; padding: 22px clamp(14px, 3vw, 30px) 90px; animation: fadeIn .6s ease-out; }
 
-        .character.talking {
-            transform: translateY(-5px) scale(1.02);
+        header.top {
+            display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+            padding: 14px 20px; margin-bottom: 20px;
+            background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px;
+            backdrop-filter: blur(12px);
         }
+        .brand { display: flex; align-items: center; gap: 12px; margin-right: auto; }
+        .brand .mark {
+            width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
+            background: linear-gradient(135deg, var(--pro), var(--con)); font-size: 1.1rem;
+        }
+        .brand h1 { font-family: var(--serif); font-size: 1.32rem; margin: 0; line-height: 1.1; }
+        .brand p { margin: 2px 0 0; font-size: .78rem; color: var(--muted); }
+        .top .backend-chip { margin: 0; }
 
-        #char1 { background-color: var(--char1-color); }
-        #char2 { background-color: var(--char2-color); }
+        /* ---------- Motion / topic setup ---------- */
+        .setup {
+            background: var(--glass); border: 1px solid var(--glass-border); border-radius: 18px;
+            padding: 22px clamp(16px, 3vw, 26px); margin-bottom: 20px; backdrop-filter: blur(12px);
+        }
+        .setup .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+        .field { flex: 1 1 340px; min-width: 0; }
+        .field label { display: block; font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; }
+        .field input[type=text] {
+            width: 100%; padding: 13px 15px; border-radius: 12px; font-size: 1rem; font-family: var(--font);
+            background: var(--surface); border: 1px solid var(--line); color: var(--ink); outline: none; transition: .15s;
+        }
+        .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(139, 92, 246, .2); }
+        .hint { font-size: .8rem; color: var(--muted); margin-top: 8px; }
+        .chip-suggests { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        .suggest {
+            font-size: .8rem; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+            background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); transition: .15s;
+        }
+        .suggest:hover { color: var(--ink); border-color: var(--accent); }
 
-        .character::before, .character::after { /* Eyes */
-            content: '';
-            position: absolute;
-            width: 15px;
-            height: 20px;
-            background-color: var(--text-color);
-            border-radius: 50%;
-            top: 35px;
+        /* The two sides, clearly labelled */
+        .sides { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: stretch; margin-top: 20px; }
+        .side-card {
+            border-radius: 14px; padding: 14px 16px; border: 1px solid var(--line);
+            background: var(--surface); position: relative; overflow: hidden;
         }
+        .side-card.pro { border-color: rgba(79, 140, 255, .45); background: linear-gradient(160deg, var(--pro-soft), transparent); }
+        .side-card.con { border-color: rgba(255, 93, 115, .45); background: linear-gradient(160deg, var(--con-soft), transparent); }
+        .side-card .tag {
+            display: inline-flex; align-items: center; gap: 7px; font-weight: 700; font-size: .82rem;
+            letter-spacing: .08em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px;
+        }
+        .side-card.pro .tag { background: var(--pro); color: #06122b; }
+        .side-card.con .tag { background: var(--con); color: #2b0610; }
+        .side-card h3 { margin: 10px 0 4px; font-family: var(--serif); font-size: 1.06rem; }
+        .side-card p { margin: 0; font-size: .86rem; color: var(--muted); line-height: 1.45; }
+        .versus { display: grid; place-items: center; font-family: var(--serif); font-style: italic; color: var(--muted); font-size: 1.1rem; }
 
-        .character::before { left: 25px; }
-        .character::after { right: 25px; }
-        
-        .stance {
-            font-weight: bold;
-            margin-top: 10px;
-            padding: 5px 10px;
-            border-radius: 12px;
-            color: white;
-            font-size: 0.9em;
-        }
+        /* ---------- Main grid ---------- */
+        .grid { display: grid; grid-template-columns: 320px 1fr 300px; gap: 20px; align-items: start; }
 
-        .speech-bubble {
-            position: absolute;
-            bottom: 120px;
-            width: 250px;
-            background: var(--bubble-color);
-            border: 2px solid #ccc;
-            border-radius: 10px;
-            padding: 15px;
-            text-align: left;
-            opacity: 0;
-            visibility: hidden;
-            transition: opacity 0.3s, visibility 0.3s;
-            font-size: 0.95em;
-            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+        .panel {
+            background: var(--glass); border: 1px solid var(--glass-border); border-radius: 18px;
+            padding: 18px; backdrop-filter: blur(12px);
         }
+        .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+        .panel-head h2 { font-family: var(--serif); font-size: 1.12rem; margin: 0; }
+        .panel-head .count {
+            margin-left: auto; font-size: .78rem; color: var(--muted); background: var(--surface-2);
+            padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line);
+        }
+        .panel-sub { font-size: .82rem; color: var(--muted); margin: -6px 0 14px; }
 
-        .speech-bubble.visible {
-            opacity: 1;
-            visibility: visible;
+        /* ---------- Judges ---------- */
+        .judges-list { display: flex; flex-direction: column; gap: 10px; max-height: 460px; overflow-y: auto; padding-right: 4px; }
+        .judge-card {
+            background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px;
+            display: flex; align-items: center; gap: 11px; transition: .18s; position: relative;
         }
+        .judge-card:hover { border-color: var(--accent); background: var(--surface-2); }
+        .judge-card.voting { box-shadow: 0 0 0 2px var(--gold), 0 0 18px rgba(245, 196, 81, .4); }
+        .judge-ava {
+            width: 40px; height: 40px; border-radius: 11px; flex: 0 0 auto; display: grid; place-items: center;
+            font-size: 1.1rem; background: linear-gradient(135deg, var(--accent), var(--pro)); position: relative;
+        }
+        .judge-vote-dot {
+            position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
+            display: grid; place-items: center; font-size: .6rem; border: 2px solid var(--surface);
+            opacity: 0; transform: scale(.4); transition: .25s;
+        }
+        .judge-vote-dot.show { opacity: 1; transform: scale(1); animation: pop .3s; }
+        .judge-vote-dot.pro { background: var(--pro); }
+        .judge-vote-dot.con { background: var(--con); }
+        .judge-meta { min-width: 0; flex: 1; }
+        .judge-meta .name { font-weight: 600; font-size: .92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .judge-meta .role { font-size: .76rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .judge-actions { display: flex; gap: 5px; }
+        .judge-actions .icon-btn { width: 28px; height: 28px; font-size: .72rem; }
+        .judge-empty { text-align: center; color: var(--muted); font-size: .85rem; padding: 24px 10px; line-height: 1.5; }
+        .add-judge-bar { display: flex; gap: 8px; margin-top: 14px; }
+        .add-judge-bar .btn { flex: 1; }
 
-        .speech-bubble::after { /* The little triangle */
-            content: '';
-            position: absolute;
-            bottom: -12px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 0;
-            height: 0;
-            border-left: 10px solid transparent;
-            border-right: 10px solid transparent;
-            border-top: 12px solid var(--bubble-color);
+        /* ---------- Stage ---------- */
+        .stage-panel { min-height: 380px; }
+        .stage {
+            display: flex; justify-content: space-around; align-items: flex-end; gap: 16px;
+            min-height: 300px; position: relative; padding-top: 30px;
         }
-        
-        .speech-bubble.side-left::after {
-            border-top-color: #ccc;
-            bottom: -15px;
+        .debater { display: flex; flex-direction: column; align-items: center; width: 46%; position: relative; }
+        .avatar {
+            width: 96px; height: 96px; border-radius: 50%; position: relative; border: 4px solid;
+            transition: transform .25s ease; display: grid; place-items: center; font-size: 2rem;
         }
-        
-         .speech-bubble::before {
-            content: '';
-            position: absolute;
-            bottom: -12px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 0;
-            height: 0;
-            border-left: 10px solid transparent;
-            border-right: 10px solid transparent;
-            border-top: 12px solid var(--bubble-color);
-            z-index: 1;
+        .debater.pro .avatar { background: radial-gradient(circle at 35% 30%, #6ea0ff, var(--pro)); border-color: #2a4f99; }
+        .debater.con .avatar { background: radial-gradient(circle at 35% 30%, #ff8092, var(--con)); border-color: #99323f; }
+        .avatar.talking { transform: translateY(-6px) scale(1.04); }
+        .name-tag {
+            margin-top: 12px; font-weight: 700; font-size: .9rem; padding: 5px 14px; border-radius: 999px; color: #fff;
         }
+        .debater.pro .name-tag { background: var(--pro); color: #06122b; }
+        .debater.con .name-tag { background: var(--con); color: #2b0610; }
+        .stance-tag { margin-top: 6px; font-size: .74rem; color: var(--muted); }
 
-
-        #debate-controls {
-            margin-top: 30px;
-            display: flex;
-            gap: 10px;
-            width: 100%;
-            max-width: 600px;
+        .bubble {
+            position: absolute; bottom: 130px; width: min(260px, 80%); background: var(--surface-2);
+            border: 1px solid var(--line); border-radius: 14px; padding: 13px 15px; font-size: .92rem; line-height: 1.5;
+            opacity: 0; visibility: hidden; transition: opacity .3s, transform .3s; transform: translateY(8px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, .35); z-index: 3;
         }
-
-        #topic-input {
-            flex-grow: 1;
-            padding: 12px;
-            border: 2px solid #ccc;
-            border-radius: 8px;
-            font-size: 1em;
+        .bubble.show { opacity: 1; visibility: visible; transform: translateY(0); }
+        .bubble::after {
+            content: ''; position: absolute; bottom: -9px; left: 50%; transform: translateX(-50%);
+            border-left: 9px solid transparent; border-right: 9px solid transparent; border-top: 10px solid var(--surface-2);
         }
+        .debater.pro .bubble { border-color: rgba(79, 140, 255, .4); }
+        .debater.con .bubble { border-color: rgba(255, 93, 115, .4); }
 
-        #start-debate-btn {
-            padding: 12px 20px;
-            border: none;
-            background-color: #337ab7;
-            color: white;
-            font-size: 1em;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background-color 0.2s;
+        .stage-controls { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+        .stage-controls .btn { flex: 1; min-width: 140px; }
+        .status {
+            margin-top: 14px; text-align: center; color: var(--muted); font-size: .9rem; min-height: 22px;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
         }
+        .status .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
-        #start-debate-btn:hover {
-            background-color: #286090;
-        }
-        
-        #start-debate-btn:disabled {
-            background-color: #999;
-            cursor: not-allowed;
-        }
-
-        #status {
-            margin-top: 20px;
-            color: #666;
-            min-height: 24px;
-        }
-
-        #api-warning {
-            background-color: #fffbe6;
-            border: 1px solid #ffe58f;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 20px;
-            max-width: 600px;
-            text-align: center;
-        }
-
-        #vote-graph-container {
-            margin-top: 30px;
-            width: 100%;
-            max-width: 600px;
-            text-align: center;
-        }
-
-        #vote-graph {
-            width: 100%;
-            height: 150px;
-            background-color: #e0e0e0;
-            border-radius: 8px;
-            display: flex;
-            align-items: flex-end;
-            padding: 10px;
-            gap: 10px;
-            box-sizing: border-box;
-            position: relative;
-        }
-
+        /* ---------- Votes ---------- */
+        .vote-graph { display: flex; align-items: flex-end; gap: 16px; height: 180px; padding: 10px 6px 0; }
+        .vote-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+        .vote-bar-wrap { width: 100%; flex: 1; display: flex; align-items: flex-end; }
         .vote-bar {
-            flex-grow: 1;
-            background-color: #4CAF50; /* Default green */
-            height: 0; /* Will be set by JS */
-            transition: height 0.5s ease-out;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: bold;
-            font-size: 1.2em;
-            position: relative;
-            box-shadow: inset 0 -3px 0 rgba(0,0,0,0.2);
+            width: 100%; border-radius: 9px 9px 4px 4px; height: 0; transition: height .55s cubic-bezier(.2,.8,.2,1);
+            display: flex; align-items: flex-start; justify-content: center; padding-top: 8px; font-weight: 700; color: #fff;
+            min-height: 4px;
+        }
+        .vote-bar.pro { background: linear-gradient(180deg, #6ea0ff, var(--pro)); }
+        .vote-bar.con { background: linear-gradient(180deg, #ff8092, var(--con)); }
+        .vote-col .lbl { margin-top: 10px; font-size: .8rem; font-weight: 600; }
+        .vote-col .num { font-size: 1.4rem; font-family: var(--serif); font-weight: 700; }
+        .lead-banner {
+            margin-top: 14px; text-align: center; font-size: .86rem; color: var(--muted);
+            padding: 10px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line);
         }
 
-        #bar-bloop { background-color: var(--char1-color); }
-        #bar-zorp { background-color: var(--char2-color); }
+        /* ---------- History ---------- */
+        .history-panel { margin-top: 20px; }
+        .history-list { display: flex; flex-direction: column; gap: 10px; max-height: 340px; overflow-y: auto; padding-right: 4px; }
+        .turn-card { border-radius: 12px; padding: 12px 14px; background: var(--surface); border-left: 3px solid; }
+        .turn-card.pro { border-color: var(--pro); }
+        .turn-card.con { border-color: var(--con); }
+        .turn-card .who { font-weight: 600; font-size: .82rem; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; }
+        .turn-card .who .tally { margin-left: auto; font-size: .76rem; color: var(--muted); font-weight: 500; }
+        .turn-card .txt { font-size: .9rem; line-height: 1.5; color: var(--ink); }
+        .history-empty { color: var(--muted); font-size: .85rem; text-align: center; padding: 20px; }
 
-        .vote-label {
-            position: absolute;
-            top: -25px;
-            color: var(--text-color);
-            font-weight: bold;
+        /* ---------- Modal ---------- */
+        .modal-overlay {
+            position: fixed; inset: 0; z-index: 1500; display: none; align-items: center; justify-content: center;
+            background: rgba(4, 8, 20, .72); backdrop-filter: blur(8px); padding: 20px; animation: fadeIn .25s;
         }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: var(--surface); border: 1px solid var(--glass-border); border-radius: 20px;
+            width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto; animation: slideUp .3s ease-out;
+        }
+        .modal-head {
+            display: flex; align-items: center; gap: 12px; padding: 20px 22px 0;
+        }
+        .modal-head h2 { font-family: var(--serif); margin: 0; font-size: 1.3rem; }
+        .modal-head .icon-btn { margin-left: auto; }
+        .modal-body { padding: 18px 22px 22px; }
+        .modal .field { margin-bottom: 14px; }
+        .modal textarea {
+            width: 100%; padding: 11px 13px; border-radius: 11px; font-family: var(--font); font-size: .92rem;
+            background: var(--bg); border: 1px solid var(--line); color: var(--ink); outline: none; resize: vertical; min-height: 64px; line-height: 1.5;
+        }
+        .modal textarea:focus, .modal input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(139,92,246,.18); }
+        .modal input[type=text] { background: var(--bg); }
+        .gen-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+        .gen-row .btn { flex: 1; min-width: 130px; }
+        .modal-foot { display: flex; gap: 10px; margin-top: 8px; }
+        .modal-foot .btn { flex: 1; }
+        .role-input-wrap { display: flex; gap: 8px; margin-bottom: 16px; }
+        .role-input-wrap input { flex: 1; padding: 11px 13px; border-radius: 11px; background: var(--bg); border: 1px solid var(--line); color: var(--ink); font-family: var(--font); outline: none; }
+
+        /* judge peek modal */
+        .peek-ava {
+            width: 64px; height: 64px; border-radius: 16px; display: grid; place-items: center; font-size: 1.8rem;
+            background: linear-gradient(135deg, var(--accent), var(--pro)); flex: 0 0 auto;
+        }
+        .peek-field { margin-bottom: 14px; }
+        .peek-field .k { font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 4px; }
+        .peek-field .v { font-size: .94rem; line-height: 1.55; }
+
+        /* ---------- Footer links ---------- */
+        .corner-links {
+            position: fixed; bottom: 16px; right: 16px; z-index: 999; display: flex; gap: 8px;
+            font-size: 12.5px;
+        }
+        .corner-links a {
+            background: var(--glass); color: var(--ink); border: 1px solid var(--glass-border);
+            padding: 7px 13px; border-radius: 999px; text-decoration: none; backdrop-filter: blur(8px); transition: .15s;
+        }
+        .corner-links a:hover { border-color: var(--accent); color: var(--accent); }
+        .corner-links a.docs { color: var(--accent); }
+
+        /* ---------- Responsive ---------- */
+        @media (max-width: 1040px) {
+            .grid { grid-template-columns: 1fr; }
+            .judges-list { max-height: 320px; }
+        }
+        @media (max-width: 620px) {
+            .sides { grid-template-columns: 1fr; }
+            .versus { padding: 4px; }
+            .gate h1 { font-size: 2.2rem; }
+            .brand p { display: none; }
+            .stage-controls .btn { min-width: 100%; }
+        }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--surface-hover); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
     </style>
 </head>
+
 <body>
+    <!-- ============ Loader / model gate ============ -->
+    <div id="loader" class="loader-overlay">
+        <div class="gate">
+            <div class="kicker">Collective Intelligence</div>
+            <h1>AI Debate Arena</h1>
+            <p class="lede">Two AI debaters argue a binary motion while a panel of AI judges — each with their own
+                background and bias — vote after every round.</p>
 
-    <h1>🤖 AI Character Debate with Judges 🤖</h1>
-    
-    <div id="judges-container">
-        </div>
+            <div id="backend-chip" class="backend-chip"><span class="dot"></span><span id="backend-label">Detecting on-device AI…</span></div>
 
-    <div id="scene">
-        <div class="character-container" id="container1">
-            <div class="speech-bubble" id="bubble1"></div>
-            <div class="character" id="char1"></div>
-            <div class="stance" id="stance1" style="background-color: var(--char1-color);">Bloop</div>
-        </div>
-        <div class="character-container" id="container2">
-            <div class="speech-bubble" id="bubble2"></div>
-            <div class="character" id="char2"></div>
-            <div class="stance" id="stance2" style="background-color: var(--char2-color);">Zorp</div>
-        </div>
-    </div>
+            <div id="gate-action" style="display:none;">
+                <p id="gate-note" class="gate-note"></p>
+                <button id="enter-btn" class="btn"><i class="fa-solid fa-gavel"></i>&nbsp; Enter the Arena</button>
+                <p id="gate-sub" class="gate-sub"></p>
+            </div>
 
-    <div id="debate-controls">
-        <input type="text" id="topic-input" placeholder="Enter a debate topic (e.g., Cats vs. Dogs)">
-        <button id="start-debate-btn">Start Debate</button>
-    </div>
-
-    <div id="status">Enter a topic and click start!</div>
-
-    <div id="vote-graph-container">
-        <h2>Live Votes</h2>
-        <div id="vote-graph">
-            <div class="vote-bar" id="bar-bloop"><span class="vote-label">Bloop</span><span id="bloop-count">0</span></div>
-            <div class="vote-bar" id="bar-zorp"><span class="vote-label">Zorp</span><span id="zorp-count">0</span></div>
+            <div id="gate-loading" style="display:none;">
+                <p id="loader-message" class="gate-note">Loading…</p>
+                <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+            </div>
         </div>
     </div>
 
-    <div id="api-warning" style="display: none;">
-        <strong>Warning:</strong> The `LanguageModel` API is not available. Please ensure you are using a compatible version of Chrome and have enabled the correct flags in <code>chrome://flags</code>.
+    <!-- ============ App ============ -->
+    <div class="app" id="app" style="display:none;">
+        <header class="top">
+            <div class="brand">
+                <div class="mark">⚖️</div>
+                <div>
+                    <h1>Collective Intelligence</h1>
+                    <p>AI Debate Arena · judged on-device</p>
+                </div>
+            </div>
+            <div id="top-backend" class="backend-chip"><span class="dot"></span><span id="top-backend-label">—</span></div>
+        </header>
+
+        <!-- Motion setup -->
+        <div class="setup">
+            <div class="row">
+                <div class="field">
+                    <label for="motion-input">Debate motion (a single statement, argued For vs. Against)</label>
+                    <input type="text" id="motion-input"
+                        placeholder="e.g. This house believes remote work is better than office work" />
+                </div>
+                <button id="start-btn" class="btn"><i class="fa-solid fa-play"></i>&nbsp; Start Debate</button>
+                <button id="reset-btn" class="btn btn-ghost" title="Reset"><i class="fa-solid fa-rotate-left"></i></button>
+            </div>
+            <div class="chip-suggests" id="suggests"></div>
+
+            <div class="sides">
+                <div class="side-card pro">
+                    <span class="tag"><i class="fa-solid fa-thumbs-up"></i> Proposition · FOR</span>
+                    <h3 id="pro-title">Argues in favour of the motion</h3>
+                    <p id="pro-desc">This debater supports the statement and tries to convince the judges it is true.</p>
+                </div>
+                <div class="versus">vs</div>
+                <div class="side-card con">
+                    <span class="tag"><i class="fa-solid fa-thumbs-down"></i> Opposition · AGAINST</span>
+                    <h3 id="con-title">Argues against the motion</h3>
+                    <p id="con-desc">This debater opposes the statement and tries to convince the judges it is false.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main grid -->
+        <div class="grid">
+            <!-- Judges -->
+            <div class="panel" id="judges-panel">
+                <div class="panel-head">
+                    <h2>The Panel</h2>
+                    <span class="count" id="judge-count">0 judges</span>
+                </div>
+                <p class="panel-sub">Each judge votes by their own background. Click <i class="fa-solid fa-eye"></i> to peek, <i class="fa-solid fa-xmark"></i> to remove.</p>
+                <div class="judges-list" id="judges-list"></div>
+                <div class="add-judge-bar">
+                    <button class="btn btn-sm" id="add-judge-btn"><i class="fa-solid fa-user-plus"></i>&nbsp; Add Judge</button>
+                </div>
+            </div>
+
+            <!-- Stage -->
+            <div class="panel stage-panel">
+                <div class="panel-head">
+                    <h2>Debate Stage</h2>
+                </div>
+                <div class="stage">
+                    <div class="debater pro" id="deb-pro">
+                        <div class="bubble" id="bubble-pro"></div>
+                        <div class="avatar" id="avatar-pro">🔵</div>
+                        <div class="name-tag">Proposition</div>
+                        <div class="stance-tag">FOR the motion</div>
+                    </div>
+                    <div class="debater con" id="deb-con">
+                        <div class="bubble" id="bubble-con"></div>
+                        <div class="avatar" id="avatar-con">🔴</div>
+                        <div class="name-tag">Opposition</div>
+                        <div class="stance-tag">AGAINST the motion</div>
+                    </div>
+                </div>
+                <div class="stage-controls">
+                    <button id="start-btn-2" class="btn"><i class="fa-solid fa-play"></i>&nbsp; Start Debate</button>
+                </div>
+                <div class="status" id="status">Set a motion, tune your panel, then start the debate.</div>
+            </div>
+
+            <!-- Votes + history -->
+            <div>
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2>Live Votes</h2>
+                    </div>
+                    <div class="vote-graph">
+                        <div class="vote-col">
+                            <div class="vote-bar-wrap"><div class="vote-bar pro" id="bar-pro"></div></div>
+                            <div class="num" id="num-pro">0</div>
+                            <div class="lbl" style="color:var(--pro)">Proposition</div>
+                        </div>
+                        <div class="vote-col">
+                            <div class="vote-bar-wrap"><div class="vote-bar con" id="bar-con"></div></div>
+                            <div class="num" id="num-con">0</div>
+                            <div class="lbl" style="color:var(--con)">Opposition</div>
+                        </div>
+                    </div>
+                    <div class="lead-banner" id="lead-banner">No votes yet.</div>
+                </div>
+
+                <div class="panel history-panel">
+                    <div class="panel-head">
+                        <h2>Transcript</h2>
+                        <span class="count" id="round-count">Round 0</span>
+                    </div>
+                    <div class="history-list" id="history-list">
+                        <div class="history-empty">The debate transcript and round-by-round votes will appear here.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const char1 = document.getElementById('char1');
-            const char2 = document.getElementById('char2');
-            const bubble1 = document.getElementById('bubble1');
-            const bubble2 = document.getElementById('bubble2');
-            const stance1El = document.getElementById('stance1');
-            const stance2El = document.getElementById('stance2');
-            const topicInput = document.getElementById('topic-input');
-            const startBtn = document.getElementById('start-debate-btn');
-            const statusEl = document.getElementById('status');
-            const apiWarning = document.getElementById('api-warning');
-            const judgesContainer = document.getElementById('judges-container');
-            const barBloop = document.getElementById('bar-bloop');
-            const barZorp = document.getElementById('bar-zorp');
-            const bloopCountEl = document.getElementById('bloop-count');
-            const zorpCountEl = document.getElementById('zorp-count');
+    <!-- ============ Add / edit judge modal ============ -->
+    <div class="modal-overlay" id="judge-modal">
+        <div class="modal">
+            <div class="modal-head">
+                <h2 id="judge-modal-title">Add a Judge</h2>
+                <button class="icon-btn" data-close-modal="judge-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="panel-sub" style="margin-top:0">Generate a judge automatically, then tweak anything before adding them to the panel.</p>
 
-            let debater1Name = 'Bloop'; // Default names
-            let debater2Name = 'Zorp';
+                <div class="gen-row">
+                    <button class="btn btn-sm btn-ghost" id="gen-random"><i class="fa-solid fa-dice"></i>&nbsp; Fully random</button>
+                </div>
+                <div class="role-input-wrap">
+                    <input type="text" id="role-seed" placeholder="…or seed a job/role, e.g. marine biologist" />
+                    <button class="btn btn-sm" id="gen-role"><i class="fa-solid fa-wand-magic-sparkles"></i>&nbsp; Generate</button>
+                </div>
+                <div id="gen-status" class="hint" style="margin-bottom:14px;display:none;"></div>
 
-            // --- Core AI and Debate Logic ---
-            const sleep = ms => new Promise(res => setTimeout(res, ms));
+                <div class="field">
+                    <label>Name</label>
+                    <input type="text" id="j-name" placeholder="Judge name" />
+                </div>
+                <div class="field">
+                    <label>Role / occupation</label>
+                    <input type="text" id="j-role" placeholder="e.g. retired historian" />
+                </div>
+                <div class="field">
+                    <label>Background</label>
+                    <textarea id="j-background" placeholder="Who they are and what shaped their worldview"></textarea>
+                </div>
+                <div class="field">
+                    <label>What sways them (bias)</label>
+                    <textarea id="j-preference" placeholder="The kind of argument they lean toward"></textarea>
+                </div>
+                <div class="field">
+                    <label>Decision criteria</label>
+                    <textarea id="j-criteria" placeholder="How they decide who is winning"></textarea>
+                </div>
 
-            const judgePersonalities = [
-                { id: 'J1', name: 'Judge Alpha', background: 'A retired historian who values factual accuracy and long-term consequences.', preference: 'leans towards well-researched arguments.', decision_criteria: 'Focus on historical data, verifiable facts, and potential future societal impacts.' },
-                { id: 'J2', name: 'Judge Beta', background: 'A passionate advocate for social justice, always considering fairness and equity.', preference: 'favors arguments that highlight community benefit.', decision_criteria: 'Prioritize arguments that address fairness, equality, and the well-being of marginalized groups.' },
-                { id: 'J3', name: 'Judge Gamma', background: 'A shrewd economist, focused on efficiency, cost-benefit analysis, and market dynamics.', preference: 'prefers data-driven economic reasoning.', decision_criteria: 'Evaluate arguments based on economic efficiency, resource allocation, and measurable financial outcomes.' },
-                { id: 'J4', name: 'Judge Delta', background: 'An environmental scientist, deeply concerned with ecological sustainability and impact.', preference: 'is swayed by ecological evidence.', decision_criteria: 'Consider the environmental footprint, sustainability, and long-term ecological health implications of each argument.' },
-                { id: 'J5', name: 'Judge Epsilon', background: 'A pragmatic engineer, looking for practical, implementable solutions and robust designs.', preference: 'values feasibility and innovation.', decision_criteria: 'Assess the practicality, implementability, and innovative aspects of proposed solutions. Is it workable?' },
-            ];
+                <div class="modal-foot">
+                    <button class="btn btn-ghost" data-close-modal="judge-modal">Cancel</button>
+                    <button class="btn" id="judge-save"><i class="fa-solid fa-check"></i>&nbsp; Add to panel</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-            const judges = [];
-            let judgeSessions = []; // To hold AI sessions for judges
-            let currentVotes = { [debater1Name]: 0, [debater2Name]: 0 }; // Initialize with default names
-            let judgeVotesHistory = []; // To store votes after each turn for analysis/graph
+    <!-- ============ Peek judge modal ============ -->
+    <div class="modal-overlay" id="peek-modal">
+        <div class="modal">
+            <div class="modal-head">
+                <div class="peek-ava" id="peek-ava">🧑‍⚖️</div>
+                <div>
+                    <h2 id="peek-name" style="font-size:1.18rem">Judge</h2>
+                    <p class="panel-sub" id="peek-role" style="margin:2px 0 0"></p>
+                </div>
+                <button class="icon-btn" data-close-modal="peek-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="peek-field"><div class="k">Background</div><div class="v" id="peek-background"></div></div>
+                <div class="peek-field"><div class="k">What sways them</div><div class="v" id="peek-preference"></div></div>
+                <div class="peek-field"><div class="k">Decision criteria</div><div class="v" id="peek-criteria"></div></div>
+                <div class="modal-foot">
+                    <button class="btn btn-ghost" id="peek-edit"><i class="fa-solid fa-pen"></i>&nbsp; Edit</button>
+                    <button class="btn btn-ghost" data-close-modal="peek-modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-            // JSON schema for judge's vote
-            const voteSchema = {
-                "type": "object",
-                "properties": {
-                    "vote": {
-                        "type": "string",
-                        "enum": [debater1Name, debater2Name] // Will be updated dynamically
+    <!-- ============ Corner links ============ -->
+    <div class="corner-links">
+        <a class="docs" href="docs.html">📖 Docs</a>
+        <a href="https://github.com/woodyhoko/collective-intelligence" target="_blank" rel="noopener">➤ Source</a>
+    </div>
+
+    <script type="module">
+        import { FilesetResolver, LlmInference } from '@mediapipe/tasks-genai';
+
+        /* ======================================================================
+           AI BACKEND — Chrome built-in Prompt API, with on-device Gemma fallback
+           ====================================================================== */
+        const MODEL_URL = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.task";
+        const MODEL_FILENAME = "gemma-4-E2B-it-web.task";
+
+        const AI = {
+            backend: null,        // 'chrome' | 'gemma'
+            gemmaLlm: null,
+            ready: false,
+
+            async detect() {
+                if (typeof window.LanguageModel !== 'undefined') {
+                    try {
+                        const avail = await window.LanguageModel.availability();
+                        if (avail && avail !== 'unavailable') { this.backend = 'chrome'; return 'chrome'; }
+                    } catch (_) { /* fall through */ }
+                }
+                this.backend = 'gemma';
+                return 'gemma';
+            },
+
+            // Stateless single-shot generation. `schema` (enum/object) is honoured on Chrome only.
+            async run(prompt, { schema = null } = {}) {
+                if (this.backend === 'chrome') {
+                    const session = await window.LanguageModel.create();
+                    try {
+                        const opts = schema ? { responseConstraint: schema } : {};
+                        return await session.prompt(prompt, opts);
+                    } finally {
+                        session.destroy();
                     }
-                },
-                "required": ["vote"]
-            };
+                }
+                // Gemma path
+                const wrapped = `<start_of_turn>user\n${prompt}\n<end_of_turn>\n<start_of_turn>model\n`;
+                const out = await this.gemmaLlm.generateResponse(wrapped);
+                return (out || '').trim();
+            }
+        };
 
-            function createJudgeElements() {
-                judgesContainer.innerHTML = ''; // Clear previous judges
-                judgePersonalities.forEach(p => {
-                    const judgeDiv = document.createElement('div');
-                    judgeDiv.classList.add('judge');
-                    judgeDiv.id = `judge-${p.id}`;
-                    judgeDiv.textContent = p.id;
+        /* ======================================================================
+           GEMMA loader (LiteRT / WebGPU) — only used when no built-in AI exists
+           ====================================================================== */
+        function setProgress(pct) { const f = document.getElementById('progress-fill'); if (f) f.style.width = pct + '%'; }
 
-                    const tooltip = document.createElement('div');
-                    tooltip.classList.add('judge-tooltip');
-                    tooltip.innerHTML = `<strong>${p.name}</strong><br>${p.background} ${p.preference}`;
-                    judgeDiv.appendChild(tooltip);
-                    
-                    const voteIndicator = document.createElement('span');
-                    voteIndicator.classList.add('judge-vote-indicator');
-                    judgeDiv.appendChild(voteIndicator);
-
-                    judgesContainer.appendChild(judgeDiv);
-                });
+        async function loadGemma() {
+            const msg = document.getElementById('loader-message');
+            const ua = navigator.userAgent;
+            if (window.location.protocol === 'file:') {
+                alert("Local security restriction:\n\nGemma uses WebGPU/OPFS features that browsers block on 'file://'.\nPlease serve over http, e.g.:\n  python -m http.server\nthen open http://localhost:8000");
+            }
+            if (!ua.includes('Chrome') && !ua.includes('Edg')) {
+                alert('On-device Gemma needs Chrome or Edge (WebGPU). The debate may not run in this browser.');
             }
 
-            async function updateVoteGraph() {
-                const totalVotes = currentVotes[debater1Name] + currentVotes[debater2Name];
-                const maxBarHeight = 130; // Max height for the bars in pixels
+            msg.textContent = "Fetching Gemma weights (cached after first download)…";
+            const { stream, size } = await loadModelWithOpfsCache(MODEL_URL, MODEL_FILENAME);
+            const tracked = streamWithProgress(stream, size, (prog, dl, total) => {
+                setProgress(Math.round(prog * 0.9));
+                const mb = b => (b / 1048576).toFixed(0);
+                msg.innerHTML = total
+                    ? `Downloading Gemma… ${prog}% (${mb(dl)} / ${mb(total)} MB)<br><span style="font-size:.8em;opacity:.6">Cached for next time</span>`
+                    : `Downloading Gemma… ${mb(dl)} MB`;
+            });
 
-                const bloopHeight = totalVotes > 0 ? (currentVotes[debater1Name] / totalVotes) * maxBarHeight : 0;
-                const zorpHeight = totalVotes > 0 ? (currentVotes[debater2Name] / totalVotes) * maxBarHeight : 0;
+            msg.textContent = "Initializing WebGPU & compiling model…";
+            setProgress(95);
+            const fileset = await FilesetResolver.forGenAiTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai/wasm');
+            AI.gemmaLlm = await LlmInference.createFromOptions(fileset, {
+                baseOptions: { modelAssetBuffer: tracked.getReader() },
+                maxTokens: 1024, topK: 16, temperature: 0.85
+            });
+            setProgress(100);
+        }
 
-                barBloop.style.height = `${bloopHeight}px`;
-                barZorp.style.height = `${zorpHeight}px`;
-
-                bloopCountEl.textContent = currentVotes[debater1Name];
-                zorpCountEl.textContent = currentVotes[debater2Name];
-            }
-
-
-            async function startDebate() {
-                if (typeof window.LanguageModel === 'undefined') {
-                    apiWarning.style.display = 'block';
-                    statusEl.textContent = 'Error: LanguageModel API not available.';
-                    return;
+        function streamWithProgress(inputStream, contentLength, onProgress) {
+            let downloaded = 0;
+            return inputStream.pipeThrough(new TransformStream({
+                transform: (chunk, controller) => {
+                    downloaded += chunk.byteLength;
+                    const prog = contentLength > 0 ? Math.min(100, Math.round(downloaded / contentLength * 100)) : 0;
+                    try { onProgress && onProgress(prog, downloaded, contentLength); } catch (_) { }
+                    controller.enqueue(chunk);
                 }
-                
-                const topic = topicInput.value.trim();
-                if (!topic) {
-                    statusEl.textContent = 'Please enter a topic to debate!';
-                    return;
-                }
-                
-                startBtn.disabled = true;
-                statusEl.textContent = 'Checking model availability...';
-                
-                hideAllBubbles();
-                clearJudgeVotes();
-                createJudgeElements(); // Recreate judges for each debate
+            }));
+        }
 
+        async function loadModelWithOpfsCache(modelUrl, fileName) {
+            try {
+                const opfsRoot = await navigator.storage.getDirectory();
                 try {
-                    const availability = await LanguageModel.availability();
-                    if (availability === 'unavailable') {
-                        statusEl.textContent = 'Error: The AI model is unavailable on this device.';
-                        startBtn.disabled = false;
+                    const fh = await opfsRoot.getFileHandle(fileName);
+                    const file = await fh.getFile();
+                    const sh = await opfsRoot.getFileHandle(fileName + "_size");
+                    const expected = parseInt(await (await sh.getFile()).text(), 10);
+                    if (Number.isFinite(expected) && file.size === expected) {
+                        return { stream: file.stream(), size: file.size };
+                    }
+                    await opfsRoot.removeEntry(fileName).catch(() => { });
+                    await opfsRoot.removeEntry(fileName + "_size").catch(() => { });
+                } catch (e) { if (e && e.name !== "NotFoundError") console.warn("OPFS read error:", e); }
+
+                let expectedSize = 0;
+                try { const head = await fetch(modelUrl, { method: "HEAD" }); if (head.ok) expectedSize = Number(head.headers.get("Content-Length") || 0); } catch (_) { }
+
+                const response = await fetch(modelUrl);
+                if (!response.ok || !response.body) throw new Error(`Failed to fetch Gemma weights: ${response.status} ${response.statusText}`);
+
+                const [consumer, cache] = response.body.tee();
+                (async () => {
+                    try {
+                        const fh = await opfsRoot.getFileHandle(fileName, { create: true });
+                        const w = await fh.createWritable();
+                        const sh = await opfsRoot.getFileHandle(fileName + "_size", { create: true });
+                        const sw = await sh.createWritable();
+                        await sw.write(new TextEncoder().encode(String(expectedSize))); await sw.close();
+                        await cache.pipeTo(w);
+                    } catch (err) {
+                        await opfsRoot.removeEntry(fileName).catch(() => { });
+                        await opfsRoot.removeEntry(fileName + "_size").catch(() => { });
+                    }
+                })();
+                return { stream: consumer, size: expectedSize };
+            } catch (err) {
+                console.warn("OPFS unavailable, direct fetch:", err);
+                const response = await fetch(modelUrl);
+                if (!response.ok || !response.body) throw new Error(`Failed to fetch Gemma weights: ${response.status}`);
+                return { stream: response.body, size: Number(response.headers.get("Content-Length") || 0) };
+            }
+        }
+
+        /* ======================================================================
+           JUDGE GENERATION
+           ====================================================================== */
+        const FIRST = ["Mara", "Idris", "Lena", "Tobias", "Priya", "Soren", "Nadia", "Caleb", "Yara", "Felix", "Imani", "Diego", "Wren", "Anders", "Saoirse", "Kofi", "Liora", "Dimitri", "Mei", "Esme"];
+        const LAST = ["Okonkwo", "Holloway", "Bergström", "Castellanos", "Nakamura", "Voss", "Adeyemi", "Petrov", "Kovač", "Delacroix", "Rahman", "Lindqvist", "Moreau", "Aaltonen", "Bianchi", "Sankara", "Whitlock", "Esposito", "Haas", "Romero"];
+        const ROLES = ["retired historian", "marine biologist", "criminal defence lawyer", "venture capitalist", "Michelin-star chef", "astrophysicist", "kindergarten teacher", "war correspondent", "Zen monk", "stand-up comedian", "forensic accountant", "park ranger", "video-game designer", "career diplomat", "third-generation farmer", "neurosurgeon", "field archaeologist", "social worker", "competitive chess coach", "documentary film-maker"];
+        const TRAITS = ["deeply skeptical", "fiercely empathetic", "relentlessly pragmatic", "stubbornly idealistic", "habitually contrarian", "data-obsessed", "poetic and intuitive", "blunt and impatient", "cautious and methodical", "rebellious", "nostalgic", "irrepressibly optimistic", "world-weary and cynical", "meticulous", "bold and impulsive"];
+        const VALUES = ["factual accuracy", "fairness for the underdog", "economic efficiency", "human emotion and lived experience", "tradition and precedent", "bold innovation", "long-term safety", "individual freedom", "ecological sustainability", "elegant simplicity", "loyalty and trust", "uncompromising justice"];
+        const EMOJI = ["🧑‍⚖️", "👩‍🔬", "🧑‍🏫", "🧑‍🚀", "🕵️", "👨‍🍳", "🧑‍🌾", "🧑‍⚕️", "🧙", "🎙️", "🧑‍💻", "🦉", "📜", "⚗️", "🎬"];
+
+        const pick = a => a[Math.floor(Math.random() * a.length)];
+
+        // Pure-JS random judge — no model needed.
+        function randomJudgeLocal(role) {
+            role = (role || pick(ROLES)).trim();
+            const trait = pick(TRAITS), value = pick(VALUES);
+            const name = `${pick(FIRST)} ${pick(LAST)}`;
+            return {
+                name,
+                role,
+                emoji: pick(EMOJI),
+                background: `A ${trait} ${role} whose life's work taught them to prize ${value} above almost everything else.`,
+                preference: `Leans toward arguments grounded in ${value}; quickly loses patience with reasoning that ignores it.`,
+                criteria: `Judges each side by how convincingly it serves ${value} — concrete, well-supported points beat rhetoric.`
+            };
+        }
+
+        // AI-assisted judge from a seed role. Falls back to local generation on any hiccup.
+        async function generateJudgeAI(roleSeed) {
+            if (!AI.ready) return randomJudgeLocal(roleSeed);
+            const seed = roleSeed && roleSeed.trim() ? roleSeed.trim() : pick(ROLES);
+            const schema = {
+                type: "object",
+                properties: {
+                    name: { type: "string" },
+                    role: { type: "string" },
+                    background: { type: "string" },
+                    preference: { type: "string" },
+                    criteria: { type: "string" }
+                },
+                required: ["name", "role", "background", "preference", "criteria"]
+            };
+            const prompt = `Invent a vivid, opinionated debate judge based on this role: "${seed}".
+Give them a distinctive full name, a one-line background that hints at a strong personal bias, what kind of argument sways them, and the criteria they use to decide a winner. Keep each field to 1-2 sentences.
+Respond ONLY with JSON: {"name": "...", "role": "...", "background": "...", "preference": "...", "criteria": "..."}`;
+            try {
+                const raw = await AI.run(prompt, { schema });
+                const obj = JSON.parse(extractJson(raw));
+                return {
+                    name: (obj.name || randomJudgeLocal(seed).name).trim(),
+                    role: (obj.role || seed).trim(),
+                    emoji: pick(EMOJI),
+                    background: (obj.background || '').trim(),
+                    preference: (obj.preference || '').trim(),
+                    criteria: (obj.criteria || '').trim()
+                };
+            } catch (e) {
+                console.warn('AI judge generation failed, using local:', e);
+                return randomJudgeLocal(seed);
+            }
+        }
+
+        function extractJson(text) {
+            if (!text) return '{}';
+            const s = text.indexOf('{'), e = text.lastIndexOf('}');
+            return (s !== -1 && e !== -1 && e > s) ? text.slice(s, e + 1) : text;
+        }
+
+        /* ======================================================================
+           STATE
+           ====================================================================== */
+        const DEFAULT_ROLES = ["retired historian", "venture capitalist", "social worker"];
+        let judges = [];          // {id, name, role, emoji, background, preference, criteria}
+        let judgeSeq = 0;
+        let votes = { pro: 0, con: 0 };
+        let transcript = [];      // {side, text, votes:{pro,con}}
+        let debating = false;
+        let editingJudgeId = null;   // if set, modal edits instead of adds
+
+        /* ======================================================================
+           DOM
+           ====================================================================== */
+        const $ = id => document.getElementById(id);
+        const motionInput = $('motion-input');
+        const judgesList = $('judges-list');
+        const judgeCountEl = $('judge-count');
+        const statusEl = $('status');
+        const historyList = $('history-list');
+        const roundCountEl = $('round-count');
+
+        const SUGGESTS = [
+            "This house believes remote work is better than office work",
+            "Social media does more harm than good",
+            "Cats make better pets than dogs",
+            "Humanity should prioritise Mars colonisation",
+            "Homework should be abolished in schools"
+        ];
+
+        /* ======================================================================
+           JUDGE UI
+           ====================================================================== */
+        function renderJudges() {
+            judgesList.innerHTML = '';
+            if (judges.length === 0) {
+                judgesList.innerHTML = `<div class="judge-empty">No judges on the panel.<br>Add at least one to hold a debate.</div>`;
+            }
+            judges.forEach(j => {
+                const card = document.createElement('div');
+                card.className = 'judge-card';
+                card.id = `judge-${j.id}`;
+                card.innerHTML = `
+                    <div class="judge-ava">${j.emoji || '🧑‍⚖️'}
+                        <span class="judge-vote-dot" id="vote-dot-${j.id}"></span>
+                    </div>
+                    <div class="judge-meta">
+                        <div class="name">${escapeHtml(j.name)}</div>
+                        <div class="role">${escapeHtml(j.role)}</div>
+                    </div>
+                    <div class="judge-actions">
+                        <button class="icon-btn" title="Peek background" data-peek="${j.id}"><i class="fa-solid fa-eye"></i></button>
+                        <button class="icon-btn" title="Remove" data-remove="${j.id}"><i class="fa-solid fa-xmark"></i></button>
+                    </div>`;
+                judgesList.appendChild(card);
+            });
+            judgeCountEl.textContent = `${judges.length} judge${judges.length === 1 ? '' : 's'}`;
+        }
+
+        function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+        judgesList.addEventListener('click', e => {
+            const peek = e.target.closest('[data-peek]');
+            const remove = e.target.closest('[data-remove]');
+            if (peek) openPeek(+peek.dataset.peek);
+            if (remove) { if (debating) return; judges = judges.filter(j => j.id !== +remove.dataset.remove); renderJudges(); }
+        });
+
+        /* ---- Peek modal ---- */
+        function openPeek(id) {
+            const j = judges.find(x => x.id === id); if (!j) return;
+            $('peek-ava').textContent = j.emoji || '🧑‍⚖️';
+            $('peek-name').textContent = j.name;
+            $('peek-role').textContent = j.role;
+            $('peek-background').textContent = j.background;
+            $('peek-preference').textContent = j.preference;
+            $('peek-criteria').textContent = j.criteria;
+            $('peek-edit').onclick = () => { closeModal('peek-modal'); openJudgeModal(id); };
+            openModal('peek-modal');
+        }
+
+        /* ---- Add / edit modal ---- */
+        function openJudgeModal(editId = null) {
+            editingJudgeId = editId;
+            $('judge-modal-title').textContent = editId ? 'Edit Judge' : 'Add a Judge';
+            $('judge-save').innerHTML = editId
+                ? '<i class="fa-solid fa-check"></i>&nbsp; Save changes'
+                : '<i class="fa-solid fa-check"></i>&nbsp; Add to panel';
+            $('gen-status').style.display = 'none';
+            if (editId) {
+                const j = judges.find(x => x.id === editId);
+                fillJudgeForm(j);
+            } else {
+                fillJudgeForm({ name: '', role: '', background: '', preference: '', criteria: '' });
+            }
+            $('role-seed').value = '';
+            openModal('judge-modal');
+        }
+
+        function fillJudgeForm(j) {
+            $('j-name').value = j.name || '';
+            $('j-role').value = j.role || '';
+            $('j-background').value = j.background || '';
+            $('j-preference').value = j.preference || '';
+            $('j-criteria').value = j.criteria || '';
+            if (j.emoji) $('judge-save').dataset.emoji = j.emoji;
+        }
+
+        function readJudgeForm() {
+            return {
+                name: $('j-name').value.trim() || 'Unnamed Judge',
+                role: $('j-role').value.trim() || 'mystery background',
+                emoji: $('judge-save').dataset.emoji || pick(EMOJI),
+                background: $('j-background').value.trim(),
+                preference: $('j-preference').value.trim(),
+                criteria: $('j-criteria').value.trim()
+            };
+        }
+
+        async function generateIntoForm(useRole) {
+            const status = $('gen-status');
+            status.style.display = 'block';
+            const roleSeed = $('role-seed').value.trim();
+            let j;
+            if (useRole) {
+                status.innerHTML = `<i class="fa-solid fa-spinner spin"></i> Generating a ${roleSeed || 'random'} judge…`;
+                j = await generateJudgeAI(roleSeed);
+            } else {
+                status.textContent = 'Rolled a fully random judge.';
+                j = randomJudgeLocal();
+            }
+            $('judge-save').dataset.emoji = j.emoji;
+            fillJudgeForm(j);
+            if (useRole) status.innerHTML = `<i class="fa-solid fa-check" style="color:var(--ok)"></i> Generated — edit anything, then add.`;
+        }
+
+        $('gen-random').onclick = () => generateIntoForm(false);
+        $('gen-role').onclick = () => generateIntoForm(true);
+        $('role-seed').addEventListener('keydown', e => { if (e.key === 'Enter') generateIntoForm(true); });
+
+        $('judge-save').onclick = () => {
+            const data = readJudgeForm();
+            if (editingJudgeId) {
+                const j = judges.find(x => x.id === editingJudgeId);
+                Object.assign(j, data);
+            } else {
+                judges.push({ id: ++judgeSeq, ...data });
+            }
+            renderJudges();
+            closeModal('judge-modal');
+        };
+
+        $('add-judge-btn').onclick = () => openJudgeModal(null);
+
+        /* ---- generic modal helpers ---- */
+        function openModal(id) { $(id).classList.add('show'); }
+        function closeModal(id) { $(id).classList.remove('show'); }
+        document.querySelectorAll('[data-close-modal]').forEach(b => b.onclick = () => closeModal(b.dataset.closeModal));
+        document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) closeModal(o.id); }));
+
+        /* ======================================================================
+           VOTES + TRANSCRIPT UI
+           ====================================================================== */
+        function renderVotes() {
+            const total = votes.pro + votes.con;
+            const max = 150;
+            $('bar-pro').style.height = total ? (votes.pro / total * max) + 'px' : '0';
+            $('bar-con').style.height = total ? (votes.con / total * max) + 'px' : '0';
+            $('num-pro').textContent = votes.pro;
+            $('num-con').textContent = votes.con;
+            const banner = $('lead-banner');
+            if (total === 0) banner.textContent = 'No votes yet.';
+            else if (votes.pro === votes.con) banner.innerHTML = `Dead heat — <b>${votes.pro}</b> all.`;
+            else if (votes.pro > votes.con) banner.innerHTML = `<span style="color:var(--pro)">Proposition leads</span> ${votes.pro}–${votes.con}.`;
+            else banner.innerHTML = `<span style="color:var(--con)">Opposition leads</span> ${votes.con}–${votes.pro}.`;
+        }
+
+        function renderTranscript() {
+            roundCountEl.textContent = `Round ${transcript.length ? Math.ceil(transcript.length / 2) : 0}`;
+            if (transcript.length === 0) {
+                historyList.innerHTML = `<div class="history-empty">The debate transcript and round-by-round votes will appear here.</div>`;
+                return;
+            }
+            historyList.innerHTML = '';
+            transcript.forEach((t, i) => {
+                const card = document.createElement('div');
+                card.className = `turn-card ${t.side}`;
+                const who = t.side === 'pro' ? 'Proposition · FOR' : 'Opposition · AGAINST';
+                card.innerHTML = `
+                    <div class="who">${who}<span class="tally">🔵 ${t.votes.pro} · 🔴 ${t.votes.con}</span></div>
+                    <div class="txt">${escapeHtml(t.text)}</div>`;
+                historyList.appendChild(card);
+            });
+            historyList.scrollTop = historyList.scrollHeight;
+        }
+
+        /* ======================================================================
+           STAGE helpers
+           ====================================================================== */
+        function showBubble(side, text) {
+            const bubble = $(`bubble-${side}`), avatar = $(`avatar-${side}`);
+            $('bubble-pro').classList.remove('show'); $('bubble-con').classList.remove('show');
+            bubble.textContent = text;
+            bubble.classList.add('show');
+            avatar.classList.add('talking');
+            setTimeout(() => avatar.classList.remove('talking'), 1600);
+        }
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        function setStatus(html, busy = false) {
+            statusEl.innerHTML = busy ? `<i class="fa-solid fa-spinner spin"></i> ${html}` : html;
+        }
+
+        /* ======================================================================
+           THE DEBATE
+           ====================================================================== */
+        async function startDebate() {
+            if (debating) return;
+            const motion = motionInput.value.trim();
+            if (!motion) { setStatus('Please enter a debate motion first.'); motionInput.focus(); return; }
+            if (judges.length === 0) { setStatus('Add at least one judge to the panel first.'); return; }
+
+            debating = true;
+            setStartButtons(true);
+            votes = { pro: 0, con: 0 };
+            transcript = [];
+            renderVotes(); renderTranscript();
+            $('bubble-pro').classList.remove('show'); $('bubble-con').classList.remove('show');
+            clearVoteDots();
+            updateSideTitles(motion);
+
+            const TURNS = 6;
+            let history = `Debate motion: "${motion}"\n\n`;
+
+            try {
+                for (let i = 0; i < TURNS; i++) {
+                    const side = i % 2 === 0 ? 'pro' : 'con';
+                    const label = side === 'pro' ? 'Proposition (FOR the motion)' : 'Opposition (AGAINST the motion)';
+                    setStatus(`${side === 'pro' ? 'Proposition' : 'Opposition'} is speaking…`, true);
+
+                    const prompt = `You are the ${label} in a formal debate.
+Motion: "${motion}".
+You must argue ${side === 'pro' ? 'in FAVOUR of' : 'AGAINST'} the motion.
+
+Debate so far:
+${history.includes(':') ? history : 'No arguments have been made yet.'}
+
+Give ONE concise, persuasive argument (1-2 sentences) for your side. If your opponent just spoke, rebut them directly. Do not greet or introduce yourself — state only the argument.`;
+
+                    let text = (await AI.run(prompt)).trim();
+                    text = cleanArgument(text);
+                    history += `${side === 'pro' ? 'Proposition' : 'Opposition'}: ${text}\n`;
+                    showBubble(side, text);
+                    await sleep(2600);
+
+                    await castVotes(motion, history);
+                    transcript.push({ side, text, votes: { ...votes } });
+                    renderTranscript();
+                    await sleep(700);
+                }
+                const winner = votes.pro === votes.con ? 'a dead heat' : (votes.pro > votes.con ? 'the Proposition' : 'the Opposition');
+                setStatus(`Debate over — the panel favours <b>${winner}</b> (${votes.pro}–${votes.con}).`);
+            } catch (err) {
+                console.error(err);
+                setStatus('Something went wrong during the debate. Check the console for details.');
+            } finally {
+                debating = false;
+                setStartButtons(false);
+            }
+        }
+
+        function cleanArgument(t) {
+            // Strip stray role prefixes / quotes the model sometimes adds.
+            return t.replace(/^["'\s]*(Proposition|Opposition|FOR|AGAINST)\s*[:\-]?\s*/i, '').replace(/^["']|["']$/g, '').trim();
+        }
+
+        async function castVotes(motion, history) {
+            setStatus('The panel is voting…', true);
+            votes = { pro: 0, con: 0 };
+            clearVoteDots();
+
+            await Promise.all(judges.map(async j => {
+                const card = $(`judge-${j.id}`);
+                if (card) card.classList.add('voting');
+                const side = await judgeVote(j, motion, history);
+                if (side === 'pro') votes.pro++; else if (side === 'con') votes.con++;
+                const dot = $(`vote-dot-${j.id}`);
+                if (dot && side) {
+                    dot.className = `judge-vote-dot show ${side}`;
+                    dot.textContent = side === 'pro' ? '▲' : '▼';
+                }
+                if (card) card.classList.remove('voting');
+            }));
+            renderVotes();
+        }
+
+        async function judgeVote(judge, motion, history) {
+            const schema = { type: "object", properties: { vote: { type: "string", enum: ["PRO", "CON"] } }, required: ["vote"] };
+            const prompt = `You are a debate judge.
+Name: ${judge.name}
+Background: ${judge.background}
+What sways you: ${judge.preference}
+Your criteria: ${judge.criteria}
+
+Motion: "${motion}".
+PRO = the Proposition, arguing FOR the motion.
+CON = the Opposition, arguing AGAINST the motion.
+
+Transcript so far:
+${history}
+
+Through the lens of YOUR background and criteria, who is more convincing right now?
+Answer with ONLY a JSON object: {"vote": "PRO"} or {"vote": "CON"}.`;
+            try {
+                const raw = await AI.run(prompt, { schema });
+                const obj = JSON.parse(extractJson(raw));
+                const v = (obj.vote || '').toUpperCase();
+                if (v === 'PRO') return 'pro';
+                if (v === 'CON') return 'con';
+                // loose fallback: scan raw text
+                const up = raw.toUpperCase();
+                if (up.includes('PRO') && !up.includes('CON')) return 'pro';
+                if (up.includes('CON') && !up.includes('PRO')) return 'con';
+                return Math.random() < 0.5 ? 'pro' : 'con';
+            } catch (e) {
+                console.warn(`Judge ${judge.name} vote failed:`, e);
+                return Math.random() < 0.5 ? 'pro' : 'con';
+            }
+        }
+
+        function clearVoteDots() {
+            document.querySelectorAll('.judge-vote-dot').forEach(d => { d.className = 'judge-vote-dot'; d.textContent = ''; });
+        }
+
+        function updateSideTitles(motion) {
+            $('pro-title').textContent = 'Argues FOR the motion';
+            $('con-title').textContent = 'Argues AGAINST the motion';
+            $('pro-desc').textContent = `Tries to convince the panel that "${motion}" is true.`;
+            $('con-desc').textContent = `Tries to convince the panel that "${motion}" is false.`;
+        }
+
+        function setStartButtons(disabled) {
+            $('start-btn').disabled = disabled;
+            $('start-btn-2').disabled = disabled;
+        }
+
+        /* ======================================================================
+           SUGGEST CHIPS + RESET
+           ====================================================================== */
+        function renderSuggests() {
+            const wrap = $('suggests');
+            wrap.innerHTML = '<span class="hint" style="margin:0 4px 0 0">Try:</span>';
+            SUGGESTS.forEach(s => {
+                const chip = document.createElement('span');
+                chip.className = 'suggest';
+                chip.textContent = s.length > 42 ? s.slice(0, 40) + '…' : s;
+                chip.title = s;
+                chip.onclick = () => { motionInput.value = s; updateSideTitles(s); };
+                wrap.appendChild(chip);
+            });
+        }
+
+        $('reset-btn').onclick = () => {
+            if (debating) return;
+            votes = { pro: 0, con: 0 }; transcript = [];
+            renderVotes(); renderTranscript();
+            $('bubble-pro').classList.remove('show'); $('bubble-con').classList.remove('show');
+            clearVoteDots();
+            setStatus('Reset. Set a motion and start again.');
+        };
+
+        $('start-btn').onclick = startDebate;
+        $('start-btn-2').onclick = startDebate;
+        motionInput.addEventListener('input', () => updateSideTitles(motionInput.value.trim() || 'the motion'));
+
+        /* ======================================================================
+           BOOTSTRAP
+           ====================================================================== */
+        async function bootApp() {
+            // seed default panel
+            judges = DEFAULT_ROLES.map(r => ({ id: ++judgeSeq, ...randomJudgeLocal(r) }));
+            renderJudges();
+            renderVotes();
+            renderTranscript();
+            renderSuggests();
+            const chip = $('top-backend');
+            const lbl = $('top-backend-label');
+            if (AI.backend === 'chrome') { chip.className = 'backend-chip ok'; lbl.textContent = 'Chrome built-in AI'; }
+            else { chip.className = 'backend-chip gemma'; lbl.textContent = 'On-device Gemma'; }
+            $('loader').style.display = 'none';
+            $('app').style.display = 'block';
+        }
+
+        async function init() {
+            const backend = await AI.detect();
+            const chip = $('backend-chip'), label = $('backend-label');
+            const action = $('gate-action'), note = $('gate-note'), sub = $('gate-sub');
+
+            if (backend === 'chrome') {
+                chip.className = 'backend-chip ok';
+                label.textContent = 'Chrome built-in AI detected';
+                note.innerHTML = 'Your browser has the built-in <b>Prompt API</b>. The whole debate runs on-device — no download, nothing leaves your machine.';
+                sub.textContent = 'Powered by Chrome\'s built-in language model.';
+                AI.ready = true;
+            } else {
+                chip.className = 'backend-chip gemma';
+                label.textContent = 'No built-in AI — using Gemma';
+                note.innerHTML = 'No built-in AI was found, so this runs on Google <b>Gemma</b> locally via WebGPU. First run is a one-time <b>≈ 2 GB</b> download, cached by your browser for next time.';
+                sub.textContent = 'Needs Chrome or Edge with WebGPU. Downloads only when you continue.';
+            }
+            action.style.display = 'block';
+
+            $('enter-btn').onclick = async () => {
+                if (backend === 'gemma') {
+                    action.style.display = 'none';
+                    $('gate-loading').style.display = 'block';
+                    try {
+                        await loadGemma();
+                        AI.ready = true;
+                    } catch (e) {
+                        console.error(e);
+                        $('loader-message').textContent = 'Could not load Gemma: ' + e.message;
                         return;
                     }
-
-                    if (availability === 'downloading' || availability === 'downloadable') {
-                         statusEl.textContent = 'AI model is downloading. This may take a moment...';
-                    }
-
-                    await sleep(500);
-
-                    const characters = [
-                        { name: debater1Name, element: char1, bubble: bubble1, stanceEl: stance1El },
-                        { name: debater2Name, element: char2, bubble: bubble2, stanceEl: stance2El },
-                    ];
-                    
-                    const stances = ['For', 'Against'];
-                    if (Math.random() > 0.5) stances.reverse();
-
-                    characters[0].stance = stances[0];
-                    characters[1].stance = stances[1];
-
-                    stance1El.textContent = `${characters[0].name} is ${characters[0].stance}`;
-                    stance2El.textContent = `${characters[1].name} is ${characters[1].stance}`;
-
-                    statusEl.textContent = 'Initializing AI session for debaters...';
-                    const debaterSession = await LanguageModel.create({
-                        monitor(m) {
-                            m.addEventListener('downloadprogress', (e) => {
-                                console.log(`Debater Model Downloaded: ${e.loaded * 100}%`);
-                                statusEl.textContent = `Downloading debater model... ${Math.round(e.loaded * 100)}%`;
-                            });
-                        },
-                    });
-
-                    statusEl.textContent = 'Initializing AI sessions for judges...';
-                    judgeSessions = await Promise.all(judgePersonalities.map(async (p, index) => {
-                        return LanguageModel.create({
-                             // No monitor for subsequent sessions to avoid cluttering status for primary download
-                        });
-                    }));
-                    
-                    let conversationHistory = `Debate Topic: "${topic}"\n\n`;
-                    const debateTurns = 6;
-
-                    for (let i = 0; i < debateTurns; i++) {
-                        const currentCharacter = characters[i % 2];
-                        const otherCharacter = characters[(i + 1) % 2];
-                        
-                        hideAllBubbles();
-
-                        const debaterPrompt = `
-                            You are a debater named ${currentCharacter.name}.
-                            The debate topic is: "${topic}".
-                            Your assigned stance is: **${currentCharacter.stance}** the topic.
-                            The opponent is ${otherCharacter.name}, whose stance is ${otherCharacter.stance}.
-
-                            **Conversation History:**
-                            ${conversationHistory.length > 0 ? conversationHistory : 'No statements have been made yet.'}
-
-                            **Your Task:**
-                            Provide a concise, compelling argument (1-2 sentences) for your stance.
-                            If there was a previous statement from your opponent, try to rebut it.
-                            Stay in character. Do not introduce yourself or use pleasantries. Just state your argument.
-                        `;
-
-                        statusEl.textContent = `${currentCharacter.name} is speaking...`;
-                        const response = await debaterSession.prompt(debaterPrompt);
-
-                        conversationHistory += `${currentCharacter.name} (${currentCharacter.stance}): ${response}\n`;
-                        showBubble(currentCharacter, response);
-                        await sleep(3500); 
-                        
-                        // Judges cast their votes after each turn
-                        await castJudgeVotes(conversationHistory, topic, characters);
-                        await sleep(1000); // Small pause after voting
-                    }
-                    
-                    statusEl.textContent = 'Debate finished! Final votes tallied.';
-                    debaterSession.destroy();
-                    judgeSessions.forEach(session => session.destroy()); // Clean up judge sessions
-
-                } catch (error) {
-                    console.error('Error during AI session:', error);
-                    statusEl.textContent = 'An error occurred. Check the console for details.';
-                } finally {
-                    startBtn.disabled = false;
                 }
-            }
-            
-            async function castJudgeVotes(currentDebateHistory, topic, characters) {
-                statusEl.textContent = 'Judges are casting their votes...';
-                currentVotes = { [debater1Name]: 0, [debater2Name]: 0 }; // Reset votes for this round
-                const roundVotes = {}; // To store votes for the current round per judge
+                bootApp();
+            };
+        }
 
-                const judgePromises = judgePersonalities.map(async (judge, index) => {
-                    const judgeSession = judgeSessions[index];
-                    const judgeEl = document.getElementById(`judge-${judge.id}`);
-                    const voteIndicator = judgeEl.querySelector('.judge-vote-indicator');
-
-                    judgeEl.classList.add('voting');
-                    voteIndicator.classList.remove('visible');
-
-                    const judgePrompt = `
-                        You are a judge named ${judge.name}.
-                        Your background: ${judge.background}
-                        Your preference: ${judge.preference}
-                        Your decision criteria: ${judge.decision_criteria}
-
-                        The debate topic is: "${topic}".
-                        Debater 1 (${debater1Name}) is ${characters.find(c => c.name === debater1Name).stance} the topic.
-                        Debater 2 (${debater2Name}) is ${characters.find(c => c.name === debater2Name).stance} the topic.
-
-                        **Debate Transcript So Far:**
-                        ${currentDebateHistory}
-
-                        Based on the debate transcript and your personal criteria, which debater has presented a more convincing argument overall up to this point?
-                        Respond ONLY with a JSON object: { "vote": "DebaterName" }. The DebaterName MUST be either "${debater1Name}" or "${debater2Name}".
-                    `;
-
-                    try {
-                        const response = await judgeSession.prompt(judgePrompt, { responseConstraint: voteSchema });
-                        const voteObj = JSON.parse(response);
-                        const votedFor = voteObj.vote;
-
-                        if (votedFor === debater1Name || votedFor === debater2Name) {
-                            currentVotes[votedFor]++;
-                            roundVotes[judge.id] = votedFor;
-
-                            // Display vote indicator
-                            voteIndicator.textContent = votedFor === debater1Name ? '🔵' : '🔴'; // Blue for Bloop, Red for Zorp
-                            voteIndicator.classList.add('visible');
-                        } else {
-                             console.warn(`Judge ${judge.name} returned an invalid vote: ${votedFor}`);
-                        }
-                    } catch (error) {
-                        console.error(`Error with judge ${judge.name} voting:`, error);
-                        // Default vote or handle error gracefully
-                    } finally {
-                        judgeEl.classList.remove('voting');
-                    }
-                });
-
-                await Promise.all(judgePromises);
-                judgeVotesHistory.push({ ...currentVotes }); // Record votes for this round
-                updateVoteGraph();
-            }
-
-            function showBubble(character, message) {
-                character.bubble.textContent = message;
-                character.element.classList.add('talking');
-                character.bubble.classList.add('visible');
-                
-                setTimeout(() => {
-                    character.element.classList.remove('talking');
-                }, 2000);
-            }
-
-            function hideAllBubbles() {
-                bubble1.classList.remove('visible');
-                bubble2.classList.remove('visible');
-            }
-
-            function clearJudgeVotes() {
-                currentVotes = { [debater1Name]: 0, [debater2Name]: 0 };
-                judgeVotesHistory = [];
-                bloopCountEl.textContent = '0';
-                zorpCountEl.textContent = '0';
-                barBloop.style.height = '0px';
-                barZorp.style.height = '0px';
-
-                // Hide all judge vote indicators
-                document.querySelectorAll('.judge-vote-indicator').forEach(indicator => {
-                    indicator.classList.remove('visible');
-                });
-            }
-            
-            startBtn.addEventListener('click', startDebate);
-            
-            // Initial setup on load
-            clearJudgeVotes();
-            createJudgeElements();
-        });
+        document.addEventListener('DOMContentLoaded', init);
+        if (document.readyState !== 'loading') init();
     </script>
 </body>
+
 </html>
